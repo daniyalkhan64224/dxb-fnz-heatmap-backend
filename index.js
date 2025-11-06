@@ -17,7 +17,7 @@ const pool = new Pool({
 
 const allowedOrigins = [
   'http://localhost:8080',       
-  'https://df-heatmap-frontend-development.up.railway.app/',      
+  'https://df-heatmap-frontend-development.up.railway.app',      
 ];
 
 app.use(cors({
