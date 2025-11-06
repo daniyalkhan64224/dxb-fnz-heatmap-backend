@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 import pg from 'pg';
+import bcrypt from 'bcryptjs';
+import { z } from 'zod';
 
 const app = express();
 const PORT = process.env.PORT || 8081;
@@ -31,6 +33,62 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+const registerSchema = z.object({
+  name: z.string().min(2, { message: "Name must be at least 2 characters" }),
+  email: z.string().email({ message: "Invalid email address" }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+  phone: z.string().min(10, { message: "Invalid phone number" })
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, name, password, phone } = registerSchema.parse(req.body);
+
+    const userCheck = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userCheck.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this email already exists.',
+      });
+    }
+
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    const newUser = await pool.query(
+      `INSERT INTO users (name, email, password_hash, phone_number)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, email, phone_number, created_at`,
+      [name, email, passwordHash, phone]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully. Please verify your phone.',
+      user: newUser.rows[0],
+    });
+
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid registration data.',
+        errors: error.errors,
+      });
+    }
+
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'An internal server error occurred.',
+    });
+  }
+});
 
 app.get('/api/db-check', async (req, res) => {
   try {
