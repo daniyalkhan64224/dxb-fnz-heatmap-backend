@@ -87,11 +87,12 @@ app.post('/api/auth/request-otp', async (req, res) => {
     );
 
     try {
-      await twilioClient.messages.create({
-        body: `Your UAE Noise Monitor verification code is: ${otp}`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: phone,
-      });
+    //   await twilioClient.messages.create({
+    //     body: `Your UAE Noise Monitor verification code is: ${otp}`,
+    //     from: process.env.TWILIO_PHONE_NUMBER,
+    //     to: phone,
+    //   });
+      console.log(`*** FAKE OTP FOR ${phone}: ${otp} ***`);
     } catch (twilioError) {
       console.error('Twilio Error:', twilioError);
       return res.status(500).json({
