@@ -412,6 +412,44 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/heatmap/history', async (req, res) => {
+  console.log('Request received for /api/heatmap/history');
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         source_id as id,
+         ST_Y(geom::geometry) AS lat,
+         ST_X(geom::geometry) AS lng,
+         altitude_meters,
+         source_type as source,
+         'UAE' as emirate,
+         created_at as timestamp
+       FROM noise_sources
+       WHERE created_at > NOW() - INTERVAL '7 days' AND source_type = 'flight'`
+    );
+    
+    const historyData = rows.map(point => ({
+      id: `${point.id}-${point.timestamp}`,
+      lat: point.lat,
+      lng: point.lng,
+      noiseLevel: 60 + (calculateNoiseLevel(point.altitude_meters) * 30), 
+      source: point.source,
+      emirate: point.emirate,
+      timestamp: point.timestamp,
+    }));
+
+    res.json(historyData);
+
+  } catch (error) {
+    console.error('Error fetching heatmap history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch heatmap history.'
+    });
+  }
+});
+
 const wss = new WebSocketServer({ server });
 
 let lastKnownFlightData = [];
