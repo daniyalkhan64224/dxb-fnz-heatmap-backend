@@ -237,50 +237,6 @@ app.get('/api/db-check', async (req, res) => {
   }
 });
 
-app.get('/api/heatmap/demo', (req, res) => {
-  console.log('Request received for /api/heatmap/demo');
-
-  const generateNoiseDataPoints = (count = 300) => {
-    const points = [];
-    for (let i = 0; i < count / 3; i++) {
-      points.push({
-        id: `d${i}`,
-        lat: 25.2048 + (Math.random() - 0.5) * 0.3,
-        lng: 55.2708 + (Math.random() - 0.5) * 0.3, // Use lng
-        noiseLevel: 50 + Math.random() * 40,
-        source: Math.random() > 0.5 ? 'traffic' : 'flight',
-        emirate: 'Dubai',
-        timestamp: new Date(),
-      });
-    }
-    for (let i = 0; i < count / 3; i++) {
-      points.push({
-        id: `ad${i}`,
-        lat: 24.4539 + (Math.random() - 0.5) * 0.4,
-        lng: 54.3773 + (Math.random() - 0.5) * 0.4,
-        noiseLevel: 45 + Math.random() * 35,
-        source: Math.random() > 0.6 ? 'traffic' : 'flight',
-        emirate: 'Abu Dhabi',
-        timestamp: new Date(),
-      });
-    }
-    for (let i = 0; i < count / 3; i++) {
-      points.push({
-        id: `sh${i}`,
-        lat: 25.3463 + (Math.random() - 0.5) * 0.25,
-        lng: 55.4209 + (Math.random() - 0.5) * 0.25,
-        noiseLevel: 55 + Math.random() * 35,
-        source: Math.random() > 0.4 ? 'traffic' : 'flight',
-        emirate: 'Sharjah',
-        timestamp: new Date(),
-      });
-    }
-    return points;
-  };
-  
-  res.json(generateNoiseDataPoints(300));
-});
-
 app.get('/api/buildings/demo', (req, res) => {
   console.log('Request received for /api/buildings/demo');
 
@@ -328,6 +284,11 @@ app.get('/api/buildings/demo', (req, res) => {
   ];
 
   res.json(DEMO_BUILDINGS);
+});
+
+const loginSchema = z.object({
+  email: z.string().email({ message: "Invalid email address" }),
+  password: z.string().min(1, { message: "Password cannot be empty" }),
 });
 
 app.post('/api/auth/login', async (req, res) => {
