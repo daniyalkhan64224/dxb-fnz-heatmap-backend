@@ -414,6 +414,8 @@ app.post('/api/auth/login', async (req, res) => {
 
 const wss = new WebSocketServer({ server });
 
+let lastKnownFlightData = [];
+
 wss.broadcast = function broadcast(data) {
   wss.clients.forEach(function each(client) {
     if (client.readyState === client.OPEN) {
@@ -441,11 +443,14 @@ async function updateAndBroadcastNoiseData() {
     emirate: p.emirate,
     timestamp: p.timestamp,
   }));
+
+  lastKnownFlightData = frontendPayload;
   
   const payload = JSON.stringify({
     type: 'NOISE_DATA_UPDATE',
     data: frontendPayload,
   });
+
   wss.broadcast(payload);
 
   const client = await pool.connect();
@@ -514,6 +519,13 @@ wss.on('connection', (ws) => {
     type: 'WELCOME',
     message: 'Connected to UAE Noise Monitor WebSocket'
   }));
+
+  if (lastKnownFlightData.length > 0) {
+    ws.send(JSON.stringify({
+      type: 'NOISE_DATA_UPDATE',
+      data: lastKnownFlightData
+    }));
+  }
 
   ws.on('close', () => {
     console.log('Client disconnected');
