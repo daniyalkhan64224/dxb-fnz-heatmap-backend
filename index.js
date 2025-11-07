@@ -414,44 +414,6 @@ app.post('/api/auth/login', async (req, res) => {
 
 const wss = new WebSocketServer({ server });
 
-const generateNoiseDataPoints = (count = 300) => {
-  const points = [];
-  for (let i = 0; i < count / 3; i++) {
-    points.push({
-      id: `d${i}`,
-      lat: 25.2048 + (Math.random() - 0.5) * 0.3,
-      lng: 55.2708 + (Math.random() - 0.5) * 0.3,
-      noiseLevel: 50 + Math.random() * 40,
-      source: Math.random() > 0.5 ? 'traffic' : 'flight',
-      emirate: 'Dubai',
-      timestamp: new Date(),
-    });
-  }
-  for (let i = 0; i < count / 3; i++) {
-    points.push({
-      id: `ad${i}`,
-      lat: 24.4539 + (Math.random() - 0.5) * 0.4,
-      lng: 54.3773 + (Math.random() - 0.5) * 0.4,
-      noiseLevel: 45 + Math.random() * 35,
-      source: Math.random() > 0.6 ? 'traffic' : 'flight',
-      emirate: 'Abu Dhabi',
-      timestamp: new Date(),
-    });
-  }
-  for (let i = 0; i < count / 3; i++) {
-    points.push({
-      id: `sh${i}`,
-      lat: 25.3463 + (Math.random() - 0.5) * 0.25,
-      lng: 55.4209 + (Math.random() - 0.5) * 0.25,
-      noiseLevel: 55 + Math.random() * 35,
-      source: Math.random() > 0.4 ? 'traffic' : 'flight',
-      emirate: 'Sharjah',
-      timestamp: new Date(),
-    });
-  }
-  return points;
-};
-
 wss.broadcast = function broadcast(data) {
   wss.clients.forEach(function each(client) {
     if (client.readyState === client.OPEN) {
@@ -486,54 +448,45 @@ async function updateAndBroadcastNoiseData() {
   });
   wss.broadcast(payload);
 
-  try {
-    const client = await pool.connect();
-    
-    await client.query("DELETE FROM noise_sources WHERE source_type = 'flight'");
-    
-    if (allNoiseData.length > 0) {
-      const values = allNoiseData.map(p => 
-        `('${p.source_type || 'flight'}', '${p.id}', ST_SetSRID(${p.geom}, 4326), ${p.altitude_meters}, ${p.speed_kph}, '${p.timestamp.toISOString()}')`
-      ).join(',');
-      
-      const query = `
-        INSERT INTO noise_sources 
-          (source_type, source_id, geom, altitude_meters, speed_kph, created_at)
-        VALUES ${values}
-        ON CONFLICT (id, created_at) DO NOTHING; 
-      `; 
+  const client = await pool.connect();
 
-      await client.query('BEGIN');
-      await client.query("DELETE FROM noise_sources WHERE source_type = 'flight'");
-      for (const p of allNoiseData) {
-        await client.query(
-          `INSERT INTO noise_sources (source_type, source_id, geom, altitude_meters, speed_kph, created_at)
-           VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7)`,
-          ['flight', p.id, p.lng, p.lat, p.altitude_meters, p.speed_kph, p.timestamp]
-        );
-      }
-      await client.query('COMMIT');
-      console.log(`Successfully saved ${allNoiseData.length} data points to DB.`);
-    }
+  try {
+    await client.query('BEGIN');
+
+    await client.query("DELETE FROM noise_sources WHERE source_type = 'flight'");
+
+    const values = allNoiseData.map(p => {
+      return `(
+        'flight', 
+        '${p.id.replace(/'/g, "''")}', 
+        ST_SetSRID(ST_MakePoint(${p.lng}, ${p.lat}), 4326), 
+        ${p.altitude_meters || 'NULL'}, 
+        ${p.speed_kph || 'NULL'}, 
+        '${p.timestamp.toISOString()}'
+      )`;
+    }).join(',');
+
+    const query = `
+      INSERT INTO noise_sources 
+        (source_type, source_id, geom, altitude_meters, speed_kph, created_at)
+      VALUES ${values};
+    `;
+
+    await client.query(query);
+    await client.query('COMMIT');
     
-    client.release();
-    
+    console.log(`Successfully saved ${allNoiseData.length} data points to DB.`);
+
   } catch (dbError) {
+    await client.query('ROLLBACK');
     console.error('Error saving noise data to database:', dbError.message);
+  } finally {
+    client.release();
   }
 }
 
 setInterval(updateAndBroadcastNoiseData, 30000);
 updateAndBroadcastNoiseData();
-
-setInterval(() => {
-  const newData = generateNoiseDataPoints(300);
-  const payload = JSON.stringify({
-    type: 'NOISE_DATA_UPDATE',
-    data: newData,
-  });
-  wss.broadcast(payload);
-}, 2000);
 
 wss.on('connection', (ws) => {
   console.log('🚀 Client connected to WebSocket');
