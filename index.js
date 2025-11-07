@@ -49,6 +49,89 @@ const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+function calculateNoiseLevel(altitude) {
+  if (altitude === null || altitude > 10000) {
+    return 0.1; 
+  }
+  if (altitude < 1000) {
+    return 1.0;
+  }
+  return 1.0 - (altitude - 1000) / 9000;
+}
+
+const UAE_BOX = {
+  lamin: 22.64,
+  lomin: 51.49,
+  lamax: 26.28,
+  lomax: 56.38,
+};
+
+async function fetchRealFlightData() {
+  console.log('Fetching real-time flight data...');
+  const url = `https://opensky-network.org/api/states/all?lamin=${UAE_BOX.lamin}&lomin=${UAE_BOX.lomin}&lamax=${UAE_BOX.lamax}&lomax=${UAE_BOX.lomax}`;
+  
+  const noiseDataPoints = [];
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`OpenSky API error: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.states) {
+      data.states.forEach((state) => {
+        const [
+          icao24,       
+          callsign,     
+          origin_country, 
+          time_position,  
+          last_contact,   
+          longitude,    
+          latitude,    
+          baro_altitude, 
+          on_ground,   
+          velocity,    
+          true_track,     
+          vertical_rate,  
+          sensors,      
+          geo_altitude,  
+          squawk,       
+          spi,          
+          position_source
+        ] = state;
+
+        if (!on_ground && latitude && longitude) {
+          const altitude = geo_altitude || baro_altitude;
+          const noiseLevel = calculateNoiseLevel(altitude);
+          
+          noiseDataPoints.push({
+            id: icao24,
+            lat: latitude,
+            lng: longitude,
+            noiseLevel: 60 + (noiseLevel * 30),
+            source: 'flight',
+            emirate: 'UAE',
+            timestamp: new Date(time_position * 1000),
+            
+            altitude_meters: Math.round(altitude),
+            speed_kph: Math.round(velocity * 3.6),
+            geom: `POINT(${longitude} ${latitude})`
+          });
+        }
+      });
+    }
+    
+    console.log(`Fetched ${noiseDataPoints.length} active flights.`);
+    return noiseDataPoints;
+
+  } catch (error) {
+    console.error('Failed to fetch real flight data:', error.message);
+    return [];
+  }
+}
+
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
   email: z.string().email({ message: "Invalid email address" }),
@@ -238,53 +321,31 @@ app.get('/api/db-check', async (req, res) => {
   }
 });
 
-app.get('/api/buildings/demo', (req, res) => {
-  console.log('Request received for /api/buildings/demo');
+app.get('/api/buildings/demo', async (req, res) => {
+  console.log('Request received for /api/buildings');
 
-  const DEMO_BUILDINGS = [
-    {
-      id: 'b1',
-      name: 'Burj Khalifa',
-      lat: 25.1972,
-      lng: 55.2744,
-      emirate: 'Dubai',
-      currentNoise: 72,
-    },
-    {
-      id: 'b2',
-      name: 'Sheikh Zayed Mosque',
-      lat: 24.4129,
-      lng: 54.4753,
-      emirate: 'Abu Dhabi',
-      currentNoise: 58,
-    },
-    {
-      id: 'b3',
-      name: 'Sharjah Airport',
-      lat: 25.3286,
-      lng: 55.5172,
-      emirate: 'Sharjah',
-      currentNoise: 85,
-    },
-    {
-      id: 'b4',
-      name: 'Dubai Marina Mall',
-      lat: 25.0784,
-      lng: 55.1414,
-      emirate: 'Dubai',
-      currentNoise: 68,
-    },
-    {
-      id: 'b5',
-      name: 'Abu Dhabi Mall',
-      lat: 24.4979,
-      lng: 54.3832,
-      emirate: 'Abu Dhabi',
-      currentNoise: 65,
-    },
-  ];
+  try {
+    const { rows } = await pool.query(
+      `SELECT 
+         id, 
+         name, 
+         emirate, 
+         current_noise,
+         -- Use PostGIS to get lat and lng back from the geog column
+         ST_Y(geog::geometry) AS lat, -- ST_Y gets Latitude
+         ST_X(geog::geometry) AS lng  -- ST_X gets Longitude
+       FROM buildings`
+    );
 
-  res.json(DEMO_BUILDINGS);
+    res.json(rows);
+
+  } catch (error) {
+    console.error('Error fetching buildings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch buildings from database.'
+    });
+  }
 });
 
 const loginSchema = z.object({
@@ -398,6 +459,72 @@ wss.broadcast = function broadcast(data) {
     }
   });
 };
+
+async function updateAndBroadcastNoiseData() {
+  const flightDataPoints = await fetchRealFlightData();
+  
+  const allNoiseData = flightDataPoints;
+  
+  if (allNoiseData.length === 0) {
+    console.log('No new data, skipping broadcast.');
+    return;
+  }
+  
+  const frontendPayload = allNoiseData.map(p => ({
+    id: p.id,
+    lat: p.lat,
+    lng: p.lng,
+    noiseLevel: p.noiseLevel,
+    source: p.source,
+    emirate: p.emirate,
+    timestamp: p.timestamp,
+  }));
+  
+  const payload = JSON.stringify({
+    type: 'NOISE_DATA_UPDATE',
+    data: frontendPayload,
+  });
+  wss.broadcast(payload);
+
+  try {
+    const client = await pool.connect();
+    
+    await client.query("DELETE FROM noise_sources WHERE source_type = 'flight'");
+    
+    if (allNoiseData.length > 0) {
+      const values = allNoiseData.map(p => 
+        `('${p.source_type || 'flight'}', '${p.id}', ST_SetSRID(${p.geom}, 4326), ${p.altitude_meters}, ${p.speed_kph}, '${p.timestamp.toISOString()}')`
+      ).join(',');
+      
+      const query = `
+        INSERT INTO noise_sources 
+          (source_type, source_id, geom, altitude_meters, speed_kph, created_at)
+        VALUES ${values}
+        ON CONFLICT (id, created_at) DO NOTHING; 
+      `; 
+
+      await client.query('BEGIN');
+      await client.query("DELETE FROM noise_sources WHERE source_type = 'flight'");
+      for (const p of allNoiseData) {
+        await client.query(
+          `INSERT INTO noise_sources (source_type, source_id, geom, altitude_meters, speed_kph, created_at)
+           VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7)`,
+          ['flight', p.id, p.lng, p.lat, p.altitude_meters, p.speed_kph, p.timestamp]
+        );
+      }
+      await client.query('COMMIT');
+      console.log(`Successfully saved ${allNoiseData.length} data points to DB.`);
+    }
+    
+    client.release();
+    
+  } catch (dbError) {
+    console.error('Error saving noise data to database:', dbError.message);
+  }
+}
+
+setInterval(updateAndBroadcastNoiseData, 30000);
+updateAndBroadcastNoiseData();
 
 setInterval(() => {
   const newData = generateNoiseDataPoints(300);
