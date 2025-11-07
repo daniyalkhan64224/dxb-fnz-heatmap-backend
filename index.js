@@ -453,8 +453,6 @@ async function updateAndBroadcastNoiseData() {
   try {
     await client.query('BEGIN');
 
-    await client.query("DELETE FROM noise_sources WHERE source_type = 'flight'");
-
     const values = allNoiseData.map(p => {
       return `(
         'flight', 
@@ -485,7 +483,28 @@ async function updateAndBroadcastNoiseData() {
   }
 }
 
-setInterval(updateAndBroadcastNoiseData, 30000);
+async function cleanupOldData() {
+  console.log('Running daily cleanup: Deleting data older than 7 days...');
+  try {
+    const result = await pool.query(
+      `DELETE FROM noise_sources WHERE created_at < NOW() - INTERVAL '7 days'`
+    );
+    if (result.rowCount > 0) {
+      console.log(`Cleanup complete. Removed ${result.rowCount} old records.`);
+    } else {
+      console.log('Cleanup complete. No old records to remove.');
+    }
+  } catch (err) {
+    console.error('Error during old data cleanup:', err.message);
+  }
+}
+
+setInterval(updateAndBroadcastNoiseData, 10000);
+
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+setInterval(cleanupOldData, SIX_HOURS_MS);
+cleanupOldData();
+
 updateAndBroadcastNoiseData();
 
 wss.on('connection', (ws) => {
