@@ -548,7 +548,7 @@ async function cleanupOldData() {
   }
 }
 
-setInterval(updateAndBroadcastNoiseData, 500000);
+setInterval(updateAndBroadcastNoiseData, 60000);
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 setInterval(cleanupOldData, SIX_HOURS_MS);
