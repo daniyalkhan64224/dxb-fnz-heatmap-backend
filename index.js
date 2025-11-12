@@ -60,10 +60,10 @@ function calculateNoiseLevel(altitude) {
 }
 
 const UAE_BOX = {
-  lamin: 22.64,
-  lomin: 51.49,
+  lamin: 24.0,
+  lomin: 54.0,
   lamax: 26.28,
-  lomax: 56.38,
+  lomax: 56.25,
 };
 
 async function fetchRealFlightData() {
@@ -427,7 +427,7 @@ app.get('/api/heatmap/history', async (req, res) => {
          created_at as timestamp
        FROM noise_sources
        WHERE 
-         created_at > NOW() - INTERVAL '7 days' 
+         created_at > NOW() - INTERVAL '24 hours'
          AND source_type = 'flight'
          AND ST_Intersects(
            geom, -- The geometry column
