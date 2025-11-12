@@ -426,43 +426,64 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// This is your NEW code
 app.get('/api/heatmap/history', async (req, res) => {
-  console.log('Request received for /api/heatmap/history');
+  console.log('Request received for /api/heatmap/history (aggregated)');
 
   try {
+    // This grid size (0.01 degrees) is ~1.1km. 
+    // Make it BIGGER (e.g., 0.05) for a more "blocky" map.
+    // Make it SMALLER (e.g., 0.005) for a more "detailed" map.
+    const gridSizeDegrees = 0.01; 
+
     const { rows } = await pool.query(
-      `SELECT
-         source_id as id,
-         ST_Y(geom::geometry) AS lat,
-         ST_X(geom::geometry) AS lng,
-         altitude_meters,
-         source_type as source,
-         'UAE' as emirate,
-         created_at as timestamp
-       FROM noise_sources
-       WHERE 
-         created_at > NOW() - INTERVAL '24 hours'
-         AND source_type = 'flight'
-         AND ST_Intersects(
-           geom, -- The geometry column
-           ST_MakeEnvelope(51.49, 22.64, 56.38, 26.28, 4326) -- (lomin, lamin, lomax, lamax, srid)
-         )`
+      `
+      WITH points_in_box AS (
+        -- First, get all the points we care about
+        SELECT geom
+        FROM noise_sources
+        WHERE 
+          created_at > NOW() - INTERVAL '24 hours'
+          AND source_type = 'flight'
+          AND ST_Intersects(
+            geom,
+            ST_MakeEnvelope(51.49, 22.64, 56.38, 26.28, 4326)
+          )
+      ),
+      grid AS (
+        -- Snap each point to a grid, and group them by grid cell
+        SELECT
+          COUNT(*) AS heat,
+          ST_SnapToGrid(geom, $1) AS grid_geom
+        FROM points_in_box
+        GROUP BY grid_geom
+      )
+      -- Finally, select the center of each grid cell and its heat (count)
+      SELECT 
+        heat AS "noiseLevel",
+        ST_Y(grid_geom::geometry) AS lat,
+        ST_X(grid_geom::geometry) AS lng
+      FROM grid
+      WHERE heat > 1 -- Optional: only show cells with more than 1 point
+      `,
+      [gridSizeDegrees]
     );
     
-    const historyData = rows.map(point => ({
-      id: `${point.id}-${point.timestamp}`,
+    // The data is already in the perfect format!
+    // No .map() is needed, but we give it a unique ID for React keys
+    const historyData = rows.map((point, index) => ({
+      id: `grid-cell-${index}`,
       lat: point.lat,
       lng: point.lng,
-      noiseLevel: 10,
-      source: point.source,
-      emirate: point.emirate,
-      timestamp: point.timestamp,
+      noiseLevel: point.noiseLevel, // This is now a COUNT, e.g., 500
+      source: 'flight-grid',
+      emirate: 'UAE',
     }));
 
     res.json(historyData);
 
   } catch (error) {
-    console.error('Error fetching heatmap history:', error);
+    console.error('Error fetching aggregated heatmap history:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch heatmap history.'
