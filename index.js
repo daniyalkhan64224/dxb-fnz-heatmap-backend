@@ -426,7 +426,13 @@ app.get('/api/heatmap/history', async (req, res) => {
          'UAE' as emirate,
          created_at as timestamp
        FROM noise_sources
-       WHERE created_at > NOW() - INTERVAL '7 days' AND source_type = 'flight'`
+       WHERE 
+         created_at > NOW() - INTERVAL '7 days' 
+         AND source_type = 'flight'
+         AND ST_Intersects(
+           geom, -- The geometry column
+           ST_MakeEnvelope(51.49, 22.64, 56.38, 26.28, 4326) -- (lomin, lamin, lomax, lamax, srid)
+         )`
     );
     
     const historyData = rows.map(point => ({
