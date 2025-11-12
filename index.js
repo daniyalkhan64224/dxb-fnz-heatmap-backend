@@ -453,7 +453,7 @@ app.get('/api/heatmap/history', async (req, res) => {
       id: `${point.id}-${point.timestamp}`,
       lat: point.lat,
       lng: point.lng,
-      noiseLevel: 60 + (calculateNoiseLevel(point.altitude_meters) * 30), 
+      noiseLevel: 10,
       source: point.source,
       emirate: point.emirate,
       timestamp: point.timestamp,
