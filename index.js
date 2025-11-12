@@ -66,13 +66,19 @@ function calculateNoiseLevel(altitude) {
 //   lomax: 56.25,
 // };
 
-const UAE_BOX = {
-  lamin: 22.6,   // includes Al Ain & Liwa
-  lomin: 51.6,   // includes western UAE near Saudi border
-  lamax: 26.3,   // top border near Ras Al Khaimah
-  lomax: 56.4,   // eastern edge, just before Oman’s Musandam tip
-};
+// const UAE_BOX = {
+//   lamin: 22.6,   // includes Al Ain & Liwa
+//   lomin: 51.6,   // includes western UAE near Saudi border
+//   lamax: 26.3,   // top border near Ras Al Khaimah
+//   lomax: 56.4,   // eastern edge, just before Oman’s Musandam tip
+// };
 
+const UAE_BOX = {
+  lamin: 22.6,   // south border near Liwa & Al Ain
+  lomin: 51.55,  // west border near Saudi Arabia
+  lamax: 26.3,   // north border near Ras Al Khaimah
+  lomax: 56.38,  // east border near Fujairah but before Oman
+};
 
 async function fetchRealFlightData() {
   console.log('Fetching real-time flight data...');
