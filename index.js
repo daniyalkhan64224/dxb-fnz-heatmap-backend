@@ -426,83 +426,172 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// app.get('/api/heatmap/history', async (req, res) => {
+//   console.log('Request received for /api/heatmap/history (aggregated)');
+
+//   try {
+//     // This grid size (0.01 degrees) is ~1.1km. 
+//     // Make it BIGGER (e.g., 0.05) for a more "blocky" map.
+//     // Make it SMALLER (e.g., 0.005) for a more "detailed" map.
+//     const gridSizeDegrees = 0.01; 
+
+//     const { rows } = await pool.query(
+//       `
+//       WITH points_in_box AS (
+//         -- First, get all the points we care about
+//         SELECT geom
+//         FROM noise_sources
+//         WHERE 
+//           created_at > NOW() - INTERVAL '24 hours'
+//           AND source_type = 'flight'
+//           AND ST_Intersects(
+//             geom,
+//             ST_MakeEnvelope(51.49, 22.64, 56.38, 26.28, 4326)
+//           )
+//       ),
+//       grid AS (
+//         -- Snap each point to a grid, and group them by grid cell
+//         SELECT
+//           COUNT(*) AS heat,
+//           ST_SnapToGrid(geom, $1) AS grid_geom
+//         FROM points_in_box
+//         GROUP BY grid_geom
+//       )
+//       -- Finally, select the center of each grid cell and its heat (count)
+//       SELECT 
+//         heat AS "noiseLevel",
+//         ST_Y(grid_geom::geometry) AS lat,
+//         ST_X(grid_geom::geometry) AS lng
+//       FROM grid
+//       WHERE heat > 1 -- Optional: only show cells with more than 1 point
+//       `,
+//       [gridSizeDegrees]
+//     );
+    
+//     // The data is already in the perfect format!
+//     // No .map() is needed, but we give it a unique ID for React keys
+//     const historyData = rows.map((point, index) => ({
+//       id: `grid-cell-${index}`,
+//       lat: point.lat,
+//       lng: point.lng,
+//       noiseLevel: point.noiseLevel, // This is now a COUNT, e.g., 500
+//       source: 'flight-grid',
+//       emirate: 'UAE',
+//     }));
+
+//     res.json(historyData);
+
+//   } catch (error) {
+//     console.error('Error fetching aggregated heatmap history:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch heatmap history.'
+//     });
+//   }
+// });
+
+// app.get('/api/heatmap/history', async (req, res) => {
+//   console.log('Request received for /api/heatmap/history (hardcoded UAE data)');
+
+//   try {
+//     const historyData = [];
+
+//     res.json(historyData);
+
+//   } catch (error) {
+//     console.error('Error fetching heatmap history:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch heatmap history.'
+//     });
+//   }
+// });
+
 app.get('/api/heatmap/history', async (req, res) => {
-  console.log('Request received for /api/heatmap/history (aggregated)');
+  console.log('Request received for /api/heatmap/history (24h aggregated flight density)');
 
   try {
-    // This grid size (0.01 degrees) is ~1.1km. 
-    // Make it BIGGER (e.g., 0.05) for a more "blocky" map.
-    // Make it SMALLER (e.g., 0.005) for a more "detailed" map.
-    const gridSizeDegrees = 0.01; 
+    const gridSizeDegrees = 0.005;
+    
+    const UAE_BOUNDS = {
+      minLat: 22.6,
+      minLng: 51.55,
+      maxLat: 26.3,
+      maxLng: 56.38
+    };
 
     const { rows } = await pool.query(
       `
-      WITH points_in_box AS (
-        -- First, get all the points we care about
-        SELECT geom
+      WITH filtered_points AS (
+        -- Get all flight points from last 24 hours within UAE bounds
+        SELECT 
+          geom,
+          created_at
         FROM noise_sources
         WHERE 
-          created_at > NOW() - INTERVAL '24 hours'
-          AND source_type = 'flight'
-          AND ST_Intersects(
-            geom,
-            ST_MakeEnvelope(51.49, 22.64, 56.38, 26.28, 4326)
-          )
+          source_type = 'flight'
+          AND created_at > NOW() - INTERVAL '24 hours'
+          -- Strict boundary enforcement
+          AND ST_X(geom::geometry) BETWEEN $2 AND $4
+          AND ST_Y(geom::geometry) BETWEEN $1 AND $3
       ),
-      grid AS (
-        -- Snap each point to a grid, and group them by grid cell
+      grid_cells AS (
+        -- Snap each point to a grid cell and count occurrences
         SELECT
-          COUNT(*) AS heat,
-          ST_SnapToGrid(geom, $1) AS grid_geom
-        FROM points_in_box
+          ST_SnapToGrid(geom, $5) AS grid_geom,
+          COUNT(*) AS flight_count
+        FROM filtered_points
         GROUP BY grid_geom
+      ),
+      density_normalized AS (
+        -- Normalize density to 0-1 scale for better visualization
+        SELECT 
+          grid_geom,
+          flight_count,
+          -- Normalize: more flights = higher weight
+          LEAST(flight_count::float / 50.0, 1.0) AS normalized_density
+        FROM grid_cells
+        WHERE flight_count >= 2  -- Filter out noise (single occurrences)
       )
-      -- Finally, select the center of each grid cell and its heat (count)
       SELECT 
-        heat AS "noiseLevel",
         ST_Y(grid_geom::geometry) AS lat,
-        ST_X(grid_geom::geometry) AS lng
-      FROM grid
-      WHERE heat > 1 -- Optional: only show cells with more than 1 point
+        ST_X(grid_geom::geometry) AS lng,
+        flight_count,
+        normalized_density,
+        -- Calculate noise level (40-90 dB range based on density)
+        (40 + (normalized_density * 50))::int AS noise_level
+      FROM density_normalized
+      ORDER BY flight_count DESC
       `,
-      [gridSizeDegrees]
+      [
+        UAE_BOUNDS.minLat,
+        UAE_BOUNDS.minLng,
+        UAE_BOUNDS.maxLat,
+        UAE_BOUNDS.maxLng,
+        gridSizeDegrees
+      ]
     );
     
-    // The data is already in the perfect format!
-    // No .map() is needed, but we give it a unique ID for React keys
-    const historyData = rows.map((point, index) => ({
-      id: `grid-cell-${index}`,
-      lat: point.lat,
-      lng: point.lng,
-      noiseLevel: point.noiseLevel, // This is now a COUNT, e.g., 500
-      source: 'flight-grid',
-      emirate: 'UAE',
+    console.log(`✅ Fetched ${rows.length} aggregated density cells from 24h flight data`);
+
+    const heatmapData = rows.map((point, index) => ({
+      id: `density-cell-${index}`,
+      lat: parseFloat(point.lat),
+      lng: parseFloat(point.lng),
+      flightCount: parseInt(point.flight_count),
+      density: parseFloat(point.normalized_density),
+      noiseLevel: parseInt(point.noise_level),
+      source: 'flight',
+      emirate: 'UAE'
     }));
 
-    res.json(historyData);
+    res.json(heatmapData);
 
   } catch (error) {
-    console.error('Error fetching aggregated heatmap history:', error);
+    console.error('❌ Error fetching aggregated flight density:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch heatmap history.'
-    });
-  }
-});
-
-app.get('/api/heatmap/history', async (req, res) => {
-  console.log('Request received for /api/heatmap/history (hardcoded UAE data)');
-
-  try {
-    const historyData = [];
-
-    res.json(historyData);
-
-  } catch (error) {
-    console.error('Error fetching heatmap history:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch heatmap history.'
+      message: 'Failed to fetch flight density data.'
     });
   }
 });
