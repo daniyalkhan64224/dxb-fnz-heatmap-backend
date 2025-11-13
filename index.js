@@ -426,7 +426,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// This is your NEW code
 app.get('/api/heatmap/history', async (req, res) => {
   console.log('Request received for /api/heatmap/history (aggregated)');
 
@@ -484,6 +483,23 @@ app.get('/api/heatmap/history', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching aggregated heatmap history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch heatmap history.'
+    });
+  }
+});
+
+app.get('/api/heatmap/history', async (req, res) => {
+  console.log('Request received for /api/heatmap/history (hardcoded UAE data)');
+
+  try {
+    const historyData = [];
+
+    res.json(historyData);
+
+  } catch (error) {
+    console.error('Error fetching heatmap history:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch heatmap history.'
