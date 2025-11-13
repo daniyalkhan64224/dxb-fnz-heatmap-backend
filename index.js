@@ -28,6 +28,158 @@ const allowedOrigins = [
   'https://df-heatmap-frontend-development.up.railway.app',      
 ];
 
+let trafficDataCache = null;
+let trafficCacheTimestamp = null;
+const TRAFFIC_CACHE_DURATION = 5 * 60 * 1000;
+
+const UAE_MAJOR_ROUTES = [
+  // Dubai Routes
+  { start: { lat: 25.076, lng: 55.132 }, end: { lat: 25.270, lng: 55.330 }, name: 'Sheikh Zayed Road - Dubai', weight: 1.0 },
+  { start: { lat: 25.050, lng: 55.200 }, end: { lat: 25.320, lng: 55.480 }, name: 'Emirates Road - Dubai', weight: 0.9 },
+  { start: { lat: 25.060, lng: 55.170 }, end: { lat: 25.180, lng: 55.300 }, name: 'Al Khail Road', weight: 0.85 },
+  { start: { lat: 25.080, lng: 55.140 }, end: { lat: 25.220, lng: 55.260 }, name: 'Jumeirah Beach Road', weight: 0.75 },
+  { start: { lat: 25.252, lng: 55.365 }, end: { lat: 25.150, lng: 55.600 }, name: 'Dubai-Al Ain Road', weight: 0.8 },
+  
+  // Dubai-Abu Dhabi Connection
+  { start: { lat: 25.076, lng: 55.132 }, end: { lat: 24.466, lng: 54.366 }, name: 'Dubai-Abu Dhabi Highway', weight: 0.95 },
+  
+  // Abu Dhabi Routes
+  { start: { lat: 24.470, lng: 54.320 }, end: { lat: 24.465, lng: 54.395 }, name: 'Abu Dhabi Corniche', weight: 0.85 },
+  { start: { lat: 24.466, lng: 54.366 }, end: { lat: 24.433, lng: 54.651 }, name: 'Abu Dhabi Airport Road', weight: 0.8 },
+  { start: { lat: 24.466, lng: 54.366 }, end: { lat: 24.350, lng: 54.800 }, name: 'Abu Dhabi-Al Ain Road', weight: 0.75 },
+  
+  // Sharjah Routes
+  { start: { lat: 25.270, lng: 55.330 }, end: { lat: 25.340, lng: 55.390 }, name: 'Dubai-Sharjah Border', weight: 0.95 },
+  { start: { lat: 25.320, lng: 55.440 }, end: { lat: 25.420, lng: 55.540 }, name: 'Emirates Road - Sharjah', weight: 0.85 },
+  { start: { lat: 25.340, lng: 55.390 }, end: { lat: 25.405, lng: 55.480 }, name: 'Sharjah-Ajman Road', weight: 0.8 },
+  
+  // Northern Emirates
+  { start: { lat: 25.405, lng: 55.445 }, end: { lat: 25.564, lng: 55.553 }, name: 'Ajman-UAQ Road', weight: 0.7 },
+  { start: { lat: 25.564, lng: 55.553 }, end: { lat: 25.790, lng: 55.940 }, name: 'UAQ-RAK Road', weight: 0.7 },
+  
+  // East Coast
+  { start: { lat: 25.270, lng: 55.330 }, end: { lat: 25.120, lng: 56.330 }, name: 'Dubai-Fujairah Road', weight: 0.75 },
+];
+
+async function fetchGoogleTrafficData() {
+  const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+  
+  if (!GOOGLE_API_KEY) {
+    throw new Error('GOOGLE_MAPS_API_KEY not found in environment variables');
+  }
+
+  const allTrafficPoints = [];
+
+  console.log('🚗 Fetching traffic data from Google Directions API...');
+
+  for (const route of UAE_MAJOR_ROUTES) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?` +
+        `origin=${route.start.lat},${route.start.lng}&` +
+        `destination=${route.end.lat},${route.end.lng}&` +
+        `departure_time=now&` +
+        `traffic_model=best_guess&` +
+        `key=${GOOGLE_API_KEY}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status !== 'OK') {
+        console.error(`❌ Error fetching route ${route.name}:`, data.status);
+        continue;
+      }
+
+      const routeData = data.routes[0];
+      if (!routeData) continue;
+
+      const leg = routeData.legs[0];
+      
+      // Calculate traffic intensity based on duration vs duration_in_traffic
+      const normalDuration = leg.duration.value; // seconds without traffic
+      const trafficDuration = leg.duration_in_traffic?.value || normalDuration;
+      const trafficRatio = trafficDuration / normalDuration;
+      
+      // Traffic intensity: 1.0 = no delay, 2.0+ = heavy traffic
+      // Map to our 0-1 scale where 1 = worst traffic
+      let trafficIntensity = Math.min((trafficRatio - 1.0) * 2.0, 1.0);
+      trafficIntensity = Math.max(0.3, trafficIntensity); // Minimum 0.3 for visibility
+      
+      // Apply route weight (important roads get higher base intensity)
+      const finalIntensity = trafficIntensity * route.weight;
+
+      // Extract polyline points
+      const polyline = routeData.overview_polyline.points;
+      const decodedPoints = decodePolyline(polyline);
+
+      // Create heatmap points along the route
+      // Sample every Nth point to avoid too many points
+      const samplingRate = Math.max(1, Math.floor(decodedPoints.length / 100)); // Max 100 points per route
+      
+      for (let i = 0; i < decodedPoints.length; i += samplingRate) {
+        const point = decodedPoints[i];
+        allTrafficPoints.push({
+          lat: point.lat,
+          lng: point.lng,
+          intensity: finalIntensity,
+          route: route.name,
+          trafficRatio: trafficRatio.toFixed(2),
+          delay: ((trafficDuration - normalDuration) / 60).toFixed(1) // minutes
+        });
+      }
+
+      console.log(`✅ ${route.name}: ${decodedPoints.length} points, traffic ratio: ${trafficRatio.toFixed(2)}x, intensity: ${finalIntensity.toFixed(2)}`);
+
+    } catch (error) {
+      console.error(`❌ Error fetching route ${route.name}:`, error.message);
+    }
+  }
+
+  console.log(`🚗 Total traffic points generated: ${allTrafficPoints.length}`);
+  return allTrafficPoints;
+}
+
+// Decode Google polyline format
+function decodePolyline(encoded) {
+  const points = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let b;
+    let shift = 0;
+    let result = 0;
+    
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+
+    points.push({
+      lat: lat / 1e5,
+      lng: lng / 1e5
+    });
+  }
+
+  return points;
+}
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -422,6 +574,71 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'An internal server error occurred.',
+    });
+  }
+});
+
+app.get('/api/traffic/roads', async (req, res) => {
+  console.log('📍 Request received for /api/traffic/roads');
+
+  try {
+    // Check cache
+    const now = Date.now();
+    if (trafficDataCache && trafficCacheTimestamp && (now - trafficCacheTimestamp < TRAFFIC_CACHE_DURATION)) {
+      console.log('✅ Returning cached traffic data');
+      return res.json({
+        success: true,
+        data: trafficDataCache,
+        cached: true,
+        cacheAge: Math.floor((now - trafficCacheTimestamp) / 1000) // seconds
+      });
+    }
+
+    // Fetch fresh data
+    console.log('🔄 Fetching fresh traffic data from Google...');
+    const trafficData = await fetchGoogleTrafficData();
+
+    // Update cache
+    trafficDataCache = trafficData;
+    trafficCacheTimestamp = now;
+
+    res.json({
+      success: true,
+      data: trafficData,
+      cached: false,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching traffic data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch traffic data',
+      error: error.message
+    });
+  }
+});
+
+// Manual cache refresh endpoint (optional - for testing)
+app.post('/api/traffic/refresh', async (req, res) => {
+  console.log('🔄 Manual traffic cache refresh requested');
+  
+  try {
+    const trafficData = await fetchGoogleTrafficData();
+    trafficDataCache = trafficData;
+    trafficCacheTimestamp = Date.now();
+    
+    res.json({
+      success: true,
+      message: 'Traffic cache refreshed',
+      pointsCount: trafficData.length
+    });
+  } catch (error) {
+    console.error('❌ Error refreshing traffic cache:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to refresh traffic cache',
+      error: error.message
     });
   }
 });
