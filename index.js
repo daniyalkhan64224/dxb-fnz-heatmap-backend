@@ -182,6 +182,18 @@ function decodePolyline(encoded) {
   return points;
 }
 
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS policy does not allow access from ${origin}`), false);
+    }
+  }
+}));
+
+app.use(express.json());
+
 app.get('/api/traffic/roads', async (req, res) => {
   console.log('📍 Request received for /api/traffic/roads');
 
@@ -333,18 +345,6 @@ app.get('/api/heatmap/history', async (req, res) => {
     });
   }
 });
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS policy does not allow access from ${origin}`), false);
-    }
-  }
-}));
-
-app.use(express.json());
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
