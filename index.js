@@ -245,6 +245,95 @@ app.post('/api/traffic/refresh', async (req, res) => {
   }
 });
 
+app.get('/api/heatmap/history', async (req, res) => {
+  console.log('Request received for /api/heatmap/history (24h aggregated flight density)');
+
+  try {
+    const gridSizeDegrees = 0.005;
+    
+    const UAE_BOUNDS = {
+      minLat: 22.6,
+      minLng: 51.55,
+      maxLat: 26.3,
+      maxLng: 56.38
+    };
+
+    const { rows } = await pool.query(
+      `
+      WITH filtered_points AS (
+        -- Get all flight points from last 24 hours within UAE bounds
+        SELECT 
+          geom,
+          created_at
+        FROM noise_sources
+        WHERE 
+          source_type = 'flight'
+          AND created_at > NOW() - INTERVAL '24 hours'
+          -- Strict boundary enforcement
+          AND ST_X(geom::geometry) BETWEEN $2 AND $4
+          AND ST_Y(geom::geometry) BETWEEN $1 AND $3
+      ),
+      grid_cells AS (
+        -- Snap each point to a grid cell and count occurrences
+        SELECT
+          ST_SnapToGrid(geom, $5) AS grid_geom,
+          COUNT(*) AS flight_count
+        FROM filtered_points
+        GROUP BY grid_geom
+      ),
+      density_normalized AS (
+        -- Normalize density to 0-1 scale for better visualization
+        SELECT 
+          grid_geom,
+          flight_count,
+          -- Normalize: more flights = higher weight
+          LEAST(flight_count::float / 50.0, 1.0) AS normalized_density
+        FROM grid_cells
+        WHERE flight_count >= 2  -- Filter out noise (single occurrences)
+      )
+      SELECT 
+        ST_Y(grid_geom::geometry) AS lat,
+        ST_X(grid_geom::geometry) AS lng,
+        flight_count,
+        normalized_density,
+        -- Calculate noise level (40-90 dB range based on density)
+        (40 + (normalized_density * 50))::int AS noise_level
+      FROM density_normalized
+      ORDER BY flight_count DESC
+      `,
+      [
+        UAE_BOUNDS.minLat,
+        UAE_BOUNDS.minLng,
+        UAE_BOUNDS.maxLat,
+        UAE_BOUNDS.maxLng,
+        gridSizeDegrees
+      ]
+    );
+    
+    console.log(`✅ Fetched ${rows.length} aggregated density cells from 24h flight data`);
+
+    const heatmapData = rows.map((point, index) => ({
+      id: `density-cell-${index}`,
+      lat: parseFloat(point.lat),
+      lng: parseFloat(point.lng),
+      flightCount: parseInt(point.flight_count),
+      density: parseFloat(point.normalized_density),
+      noiseLevel: parseInt(point.noise_level),
+      source: 'flight',
+      emirate: 'UAE'
+    }));
+
+    res.json(heatmapData);
+
+  } catch (error) {
+    console.error('❌ Error fetching aggregated flight density:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch flight density data.'
+    });
+  }
+});
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
