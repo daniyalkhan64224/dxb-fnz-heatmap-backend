@@ -34,31 +34,31 @@ const TRAFFIC_CACHE_DURATION = 5 * 60 * 1000;
 
 const UAE_MAJOR_ROUTES = [
   // Dubai Routes
-  { start: { lat: 25.076, lng: 55.132 }, end: { lat: 25.270, lng: 55.330 }, name: 'Sheikh Zayed Road - Dubai', weight: 1.0 },
-  { start: { lat: 25.050, lng: 55.200 }, end: { lat: 25.320, lng: 55.480 }, name: 'Emirates Road - Dubai', weight: 0.9 },
-  { start: { lat: 25.060, lng: 55.170 }, end: { lat: 25.180, lng: 55.300 }, name: 'Al Khail Road', weight: 0.85 },
-  { start: { lat: 25.080, lng: 55.140 }, end: { lat: 25.220, lng: 55.260 }, name: 'Jumeirah Beach Road', weight: 0.75 },
-  { start: { lat: 25.252, lng: 55.365 }, end: { lat: 25.150, lng: 55.600 }, name: 'Dubai-Al Ain Road', weight: 0.8 },
+  { start: { lat: 25.076, lng: 55.132 }, end: { lat: 25.270, lng: 55.330 }, name: 'Sheikh Zayed Road - Dubai', weight: 1.0, emirate: 'Dubai' },
+  { start: { lat: 25.050, lng: 55.200 }, end: { lat: 25.320, lng: 55.480 }, name: 'Emirates Road - Dubai', weight: 0.9, emirate: 'Dubai' },
+  { start: { lat: 25.060, lng: 55.170 }, end: { lat: 25.180, lng: 55.300 }, name: 'Al Khail Road', weight: 0.85, emirate: 'Dubai' },
+  { start: { lat: 25.080, lng: 55.140 }, end: { lat: 25.220, lng: 55.260 }, name: 'Jumeirah Beach Road', weight: 0.75, emirate: 'Dubai' },
+  { start: { lat: 25.252, lng: 55.365 }, end: { lat: 25.150, lng: 55.600 }, name: 'Dubai-Al Ain Road', weight: 0.8, emirate: 'Dubai' },
   
-  // Dubai-Abu Dhabi Connection
-  { start: { lat: 25.076, lng: 55.132 }, end: { lat: 24.466, lng: 54.366 }, name: 'Dubai-Abu Dhabi Highway', weight: 0.95 },
+  // Dubai-Abu Dhabi Connection (spans both)
+  { start: { lat: 25.076, lng: 55.132 }, end: { lat: 24.466, lng: 54.366 }, name: 'Dubai-Abu Dhabi Highway', weight: 0.95, emirate: 'Multiple' },
   
   // Abu Dhabi Routes
-  { start: { lat: 24.470, lng: 54.320 }, end: { lat: 24.465, lng: 54.395 }, name: 'Abu Dhabi Corniche', weight: 0.85 },
-  { start: { lat: 24.466, lng: 54.366 }, end: { lat: 24.433, lng: 54.651 }, name: 'Abu Dhabi Airport Road', weight: 0.8 },
-  { start: { lat: 24.466, lng: 54.366 }, end: { lat: 24.350, lng: 54.800 }, name: 'Abu Dhabi-Al Ain Road', weight: 0.75 },
+  { start: { lat: 24.470, lng: 54.320 }, end: { lat: 24.465, lng: 54.395 }, name: 'Abu Dhabi Corniche', weight: 0.85, emirate: 'Abu Dhabi' },
+  { start: { lat: 24.466, lng: 54.366 }, end: { lat: 24.433, lng: 54.651 }, name: 'Abu Dhabi Airport Road', weight: 0.8, emirate: 'Abu Dhabi' },
+  { start: { lat: 24.466, lng: 54.366 }, end: { lat: 24.350, lng: 54.800 }, name: 'Abu Dhabi-Al Ain Road', weight: 0.75, emirate: 'Abu Dhabi' },
   
   // Sharjah Routes
-  { start: { lat: 25.270, lng: 55.330 }, end: { lat: 25.340, lng: 55.390 }, name: 'Dubai-Sharjah Border', weight: 0.95 },
-  { start: { lat: 25.320, lng: 55.440 }, end: { lat: 25.420, lng: 55.540 }, name: 'Emirates Road - Sharjah', weight: 0.85 },
-  { start: { lat: 25.340, lng: 55.390 }, end: { lat: 25.405, lng: 55.480 }, name: 'Sharjah-Ajman Road', weight: 0.8 },
+  { start: { lat: 25.270, lng: 55.330 }, end: { lat: 25.340, lng: 55.390 }, name: 'Dubai-Sharjah Border', weight: 0.95, emirate: 'Sharjah' },
+  { start: { lat: 25.320, lng: 55.440 }, end: { lat: 25.420, lng: 55.540 }, name: 'Emirates Road - Sharjah', weight: 0.85, emirate: 'Sharjah' },
+  { start: { lat: 25.340, lng: 55.390 }, end: { lat: 25.405, lng: 55.480 }, name: 'Sharjah-Ajman Road', weight: 0.8, emirate: 'Sharjah' },
   
   // Northern Emirates
-  { start: { lat: 25.405, lng: 55.445 }, end: { lat: 25.564, lng: 55.553 }, name: 'Ajman-UAQ Road', weight: 0.7 },
-  { start: { lat: 25.564, lng: 55.553 }, end: { lat: 25.790, lng: 55.940 }, name: 'UAQ-RAK Road', weight: 0.7 },
+  { start: { lat: 25.405, lng: 55.445 }, end: { lat: 25.564, lng: 55.553 }, name: 'Ajman-UAQ Road', weight: 0.7, emirate: 'Ajman' },
+  { start: { lat: 25.564, lng: 55.553 }, end: { lat: 25.790, lng: 55.940 }, name: 'UAQ-RAK Road', weight: 0.7, emirate: 'Ras Al Khaimah' },
   
   // East Coast
-  { start: { lat: 25.270, lng: 55.330 }, end: { lat: 25.120, lng: 56.330 }, name: 'Dubai-Fujairah Road', weight: 0.75 },
+  { start: { lat: 25.270, lng: 55.330 }, end: { lat: 25.120, lng: 56.330 }, name: 'Dubai-Fujairah Road', weight: 0.75, emirate: 'Fujairah' },
 ];
 
 async function fetchGoogleTrafficData() {
